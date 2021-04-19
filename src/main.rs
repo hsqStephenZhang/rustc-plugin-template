@@ -13,19 +13,17 @@ use rustc_interface::interface::Compiler;
 use rustc_interface::Config;
 use rustc_interface::Queries;
 
-#[derive(Default)]
 struct MyCallback;
 
 impl Callbacks for MyCallback {
-    fn config(&mut self, _config: &mut Config) {
-        println!("Hello from my callback");
-    }
+    fn config(&mut self, _config: &mut Config) {}
 
     fn after_parsing<'tcx>(
         &mut self,
         _compiler: &Compiler,
         _queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
+        println!("Hello from my callback!!!");
         Compilation::Continue
     }
 
