@@ -40,11 +40,9 @@ impl Callbacks for MyCallback {
 
     fn after_analysis<'tcx>(
         &mut self,
-        compiler: &Compiler,
+        _compiler: &Compiler,
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
-        println!("Hello from my callback!!!");
-        compiler.session().abort_if_errors();
         queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
             let krate = tcx.hir().krate();
 
@@ -100,7 +98,8 @@ impl<'tcx> Visitor<'tcx> for ExprVisitor<'tcx> {
         if let Some(def_id) = tcx.hir().opt_local_def_id(hir_id) {
             let ty = tcx.typeck(def_id).node_type(hir_id);
             if let rustc_middle::ty::Closure(def_id, substs) = ty.kind() {
-                println!("{:?} - {:?}", def_id, substs);
+                let span = tcx.def_span(*def_id);
+                println!("location={:?} -- {:?}", span, substs.as_closure());
             }
         }
         rustc_hir::intravisit::walk_expr(self, expr);
