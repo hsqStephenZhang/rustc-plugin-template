@@ -11,7 +11,7 @@ use std::process::{exit, Command};
 use rustc_driver::Callbacks;
 use rustc_driver::Compilation;
 
-use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
+use rustc_hir::intravisit::{NestedVisitorMap, Visitor};
 use rustc_interface::interface::Compiler;
 use rustc_interface::Config;
 use rustc_interface::Queries;
@@ -99,7 +99,10 @@ impl<'tcx> Visitor<'tcx> for ExprVisitor<'tcx> {
         let hir_id = expr.hir_id;
         if let Some(def_id) = tcx.hir().opt_local_def_id(hir_id) {
             let ty = tcx.typeck(def_id).node_type(hir_id);
-            println!("{:?}: {:?}", expr, ty);
+            if let rustc_middle::ty::Closure(def_id, substs) = ty.kind() {
+                println!("{:?} - {:?}", def_id, substs);
+            }
         }
+        rustc_hir::intravisit::walk_expr(self, expr);
     }
 }
