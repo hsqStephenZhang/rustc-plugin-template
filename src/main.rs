@@ -16,6 +16,7 @@ use rustc_interface::interface::Compiler;
 use rustc_interface::Config;
 use rustc_interface::Queries;
 use rustc_middle::hir::map::Map;
+use rustc_middle::ty;
 
 struct MyCallback;
 
@@ -47,7 +48,7 @@ impl Callbacks for MyCallback {
             let krate = tcx.hir().krate();
 
             let mut expr_visitor = ExprVisitor { tcx };
-            for (_, item) in &krate.items {
+            for item in krate.items() {
                 expr_visitor.visit_item(item);
             }
         });
@@ -95,6 +96,42 @@ impl<'tcx> Visitor<'tcx> for ExprVisitor<'tcx> {
     fn visit_expr(&mut self, expr: &'tcx rustc_hir::Expr<'tcx>) {
         let tcx = self.tcx;
         let hir_id = expr.hir_id;
+        match expr.kind {
+            rustc_hir::ExprKind::Struct(_, fields, _) => {
+                for f in fields {
+                    if let rustc_hir::ExprKind::Match(_, _, _) = f.expr.kind {
+                        println!("location={:?}, field={:?}\n", f.span, f.expr);
+                    }
+                    if let rustc_hir::ExprKind::If(e, _, _) = f.expr.kind {
+                        if let rustc_hir::ExprKind::Let(..) = e.kind {
+                            println!("location={:?}, field={:?}\n", f.span, f.expr);
+                        }
+                    }
+                }
+            }
+            rustc_hir::ExprKind::Call(callee, fields) => {
+                let hir_id = callee.hir_id;
+                if let Some(def_id) = tcx.hir().opt_local_def_id(hir_id) {
+                    let ty = tcx.typeck(def_id).node_type(hir_id);
+                    println!("ty_kind: {:?}", ty);
+                    if let ty::Tuple(..) = ty.kind() {
+                        for f in fields {
+                            if let rustc_hir::ExprKind::Match(_, _, _) = f.kind {
+                                println!("location={:?}, field={:?}\n", f.span, f);
+                            }
+                            if let rustc_hir::ExprKind::If(e, _, _) = f.kind {
+                                if let rustc_hir::ExprKind::Let(..) = e.kind {
+                                    println!("location={:?}, field={:?}\n", f.span, f);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            _ => {}
+        }
+
         if let Some(def_id) = tcx.hir().opt_local_def_id(hir_id) {
             let ty = tcx.typeck(def_id).node_type(hir_id);
             if let rustc_middle::ty::Closure(def_id, substs) = ty.kind() {
