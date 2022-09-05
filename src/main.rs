@@ -1,5 +1,6 @@
 #![feature(rustc_private)]
 
+extern crate rustc_ast;
 extern crate rustc_driver;
 extern crate rustc_hir;
 extern crate rustc_interface;
@@ -11,11 +12,12 @@ use std::process::{exit, Command};
 use rustc_driver::Callbacks;
 use rustc_driver::Compilation;
 
-use rustc_hir::intravisit::{NestedVisitorMap, Visitor};
+use rustc_hir::intravisit::Visitor;
 use rustc_interface::interface::Compiler;
 use rustc_interface::Config;
 use rustc_interface::Queries;
 use rustc_middle::hir::map::Map;
+use rustc_middle::hir::nested_filter::OnlyBodies;
 use rustc_middle::ty;
 
 struct MyCallback;
@@ -45,12 +47,9 @@ impl Callbacks for MyCallback {
         queries: &'tcx Queries<'tcx>,
     ) -> Compilation {
         queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
-            let krate = tcx.hir().krate();
-
             let mut expr_visitor = ExprVisitor { tcx };
-            for item in krate.items() {
-                expr_visitor.visit_item(item);
-            }
+            let map = tcx.hir();
+            map.visit_all_item_likes_in_crate(&mut expr_visitor);
         });
         Compilation::Continue
     }
@@ -66,6 +65,8 @@ fn main() {
         .output()
         .unwrap();
     let sysroot = String::from_utf8_lossy(&sysroot.stdout).trim().to_string();
+
+    println!("sysroot: {:?}", sysroot);
 
     let compilation = rustc_driver::catch_with_exit_code(move || {
         let mut args = std::env::args().collect::<Vec<_>>();
@@ -89,26 +90,15 @@ struct ExprVisitor<'tcx> {
 impl<'tcx> Visitor<'tcx> for ExprVisitor<'tcx> {
     type Map = Map<'tcx>;
 
-    fn nested_visit_map(&mut self) -> NestedVisitorMap<Self::Map> {
-        NestedVisitorMap::OnlyBodies(self.tcx.hir())
+    type NestedFilter = OnlyBodies;
+
+    fn nested_visit_map(&mut self) -> Self::Map {
+        self.tcx.hir()
     }
 
     fn visit_expr(&mut self, expr: &'tcx rustc_hir::Expr<'tcx>) {
         let tcx = self.tcx;
-        let hir_id = expr.hir_id;
         match expr.kind {
-            rustc_hir::ExprKind::Struct(_, fields, _) => {
-                for f in fields {
-                    if let rustc_hir::ExprKind::Match(_, _, _) = f.expr.kind {
-                        println!("location={:?}, field={:?}\n", f.span, f.expr);
-                    }
-                    if let rustc_hir::ExprKind::If(e, _, _) = f.expr.kind {
-                        if let rustc_hir::ExprKind::Let(..) = e.kind {
-                            println!("location={:?}, field={:?}\n", f.span, f.expr);
-                        }
-                    }
-                }
-            }
             rustc_hir::ExprKind::Call(callee, fields) => {
                 let hir_id = callee.hir_id;
                 if let Some(def_id) = tcx.hir().opt_local_def_id(hir_id) {
@@ -130,14 +120,6 @@ impl<'tcx> Visitor<'tcx> for ExprVisitor<'tcx> {
             }
 
             _ => {}
-        }
-
-        if let Some(def_id) = tcx.hir().opt_local_def_id(hir_id) {
-            let ty = tcx.typeck(def_id).node_type(hir_id);
-            if let rustc_middle::ty::Closure(def_id, substs) = ty.kind() {
-                let span = tcx.def_span(*def_id);
-                println!("location={:?} -- {:?}", span, substs.as_closure());
-            }
         }
         rustc_hir::intravisit::walk_expr(self, expr);
     }
